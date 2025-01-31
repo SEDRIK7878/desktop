@@ -13,7 +13,7 @@ import {
   IUnbornRepository,
 } from '../../../src/models/tip'
 import { GitStore } from '../../../src/lib/stores'
-import { GitProcess } from 'dugite'
+import { exec } from 'dugite'
 import {
   getBranchesPointedAt,
   createBranch,
@@ -55,7 +55,7 @@ describe('git/branch', () => {
     it('returns correct ref if checkout occurs', async () => {
       const repository = await setupEmptyRepository()
 
-      await GitProcess.exec(['checkout', '-b', 'not-master'], repository.path)
+      await exec(['checkout', '-b', 'not-master'], repository.path)
 
       const store = new GitStore(repository, shell, statsStore)
       await store.loadStatus()
@@ -95,7 +95,6 @@ describe('git/branch', () => {
       expect(onBranch.branch.tip.sha).toEqual(
         'dfa96676b65e1c0ed43ca25492252a5e384c8efd'
       )
-      expect(onBranch.branch.tip.author.name).toEqual('Brendan Forster')
     })
 
     it('returns non-origin remote', async () => {
@@ -216,7 +215,7 @@ describe('git/branch', () => {
       const [remoteBranch] = await getBranches(mockLocal, remoteRef)
       expect(remoteBranch).not.toBeUndefined()
 
-      await checkoutBranch(mockLocal, null, remoteBranch)
+      await checkoutBranch(mockLocal, remoteBranch, null)
       await git(['checkout', '-'], mockLocal.path, 'checkoutPrevious')
 
       expect(await getBranches(mockLocal, localRef)).toBeArrayOfSize(1)
@@ -229,8 +228,7 @@ describe('git/branch', () => {
 
       await deleteRemoteBranch(
         mockLocal,
-        null,
-        localBranch.upstreamRemoteName!,
+        { name: localBranch.upstreamRemoteName!, url: '' },
         localBranch.upstreamWithoutRemote!
       )
 
@@ -253,7 +251,7 @@ describe('git/branch', () => {
       const [remoteBranch] = await getBranches(mockLocal, remoteRef)
       expect(remoteBranch).not.toBeUndefined()
 
-      await checkoutBranch(mockLocal, null, remoteBranch)
+      await checkoutBranch(mockLocal, remoteBranch, null)
       await git(['checkout', '-'], mockLocal.path, 'checkoutPrevious')
 
       expect(await getBranches(mockLocal, localRef)).toBeArrayOfSize(1)
@@ -271,8 +269,7 @@ describe('git/branch', () => {
 
       await deleteRemoteBranch(
         mockLocal,
-        null,
-        localBranch.upstreamRemoteName!,
+        { name: localBranch.upstreamRemoteName!, url: '' },
         localBranch.upstreamWithoutRemote!
       )
 

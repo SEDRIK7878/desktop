@@ -94,7 +94,8 @@ export enum PopupType {
   TestNotifications = 'TestNotifications',
   PullRequestComment = 'PullRequestComment',
   UnknownAuthors = 'UnknownAuthors',
-  ConfirmRepoRulesBypass = 'ConfirmRepoRulesBypass',
+  TestIcons = 'TestIcons',
+  ConfirmCommitFilteredChanges = 'ConfirmCommitFilteredChanges',
 }
 
 interface IBasePopup {
@@ -149,7 +150,11 @@ export type PopupDetail =
       initialName?: string
       targetCommit?: CommitOneLine
     }
-  | { type: PopupType.SignIn }
+  | {
+      type: PopupType.SignIn
+      isCredentialHelperSignIn?: boolean
+      credentialHelperUrl?: string
+    }
   | { type: PopupType.About }
   | { type: PopupType.InstallGit; path: string }
   | { type: PopupType.PublishRepository; repository: Repository }
@@ -170,8 +175,10 @@ export type PopupDetail =
   | { type: PopupType.CLIInstalled }
   | {
       type: PopupType.GenericGitAuthentication
-      hostname: string
-      retryAction: RetryAction
+      remoteUrl: string
+      username?: string
+      onSubmit: (username: string, password: string) => void
+      onDismiss: () => void
     }
   | {
       type: PopupType.ExternalEditorFailed
@@ -415,10 +422,12 @@ export type PopupDetail =
       onCommit: () => void
     }
   | {
-      type: PopupType.ConfirmRepoRulesBypass
-      repository: GitHubRepository
-      branch: string
-      onConfirm: () => void
+      type: PopupType.TestIcons
+    }
+  | {
+      type: PopupType.ConfirmCommitFilteredChanges
+      onCommitAnyway: () => void
+      showFilesToBeCommitted: () => void
     }
 
 export type Popup = IBasePopup & PopupDetail

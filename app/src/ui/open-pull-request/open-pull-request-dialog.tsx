@@ -8,8 +8,11 @@ import { DialogFooter, OkCancelButtonGroup, Dialog } from '../dialog'
 import { Dispatcher } from '../dispatcher'
 import { Ref } from '../lib/ref'
 import { Octicon } from '../octicons'
-import * as OcticonSymbol from '../octicons/octicons.generated'
-import { OpenPullRequestDialogHeader } from './open-pull-request-header'
+import * as octicons from '../octicons/octicons.generated'
+import {
+  OpenPullRequestDialogHeader,
+  OpenPullRequestDialogId,
+} from './open-pull-request-header'
 import { PullRequestFilesChanged } from './pull-request-files-changed'
 import { PullRequestMergeStatus } from './pull-request-merge-status'
 import { ComputedAction } from '../../models/computed-action'
@@ -116,6 +119,7 @@ export class OpenPullRequestDialog extends React.Component<IOpenPullRequestDialo
     const { baseBranch, commitSHAs } = pullRequestState
     return (
       <OpenPullRequestDialogHeader
+        repository={this.props.repository}
         baseBranch={baseBranch}
         currentBranch={currentBranch}
         defaultBranch={defaultBranch}
@@ -207,7 +211,7 @@ export class OpenPullRequestDialog extends React.Component<IOpenPullRequestDialo
     return (
       <div className="open-pull-request-message">
         <div>
-          <Octicon symbol={OcticonSymbol.gitPullRequest} />
+          <Octicon symbol={octicons.gitPullRequest} />
           <h3>There are no changes.</h3>
           {message}
         </div>
@@ -225,7 +229,7 @@ export class OpenPullRequestDialog extends React.Component<IOpenPullRequestDialo
     return (
       <div className="open-pull-request-message">
         <div>
-          <Octicon symbol={OcticonSymbol.gitPullRequest} />
+          <Octicon symbol={octicons.gitPullRequest} />
           <h3>Could not find a default branch to compare against.</h3>
           Select a base branch above.
         </div>
@@ -249,7 +253,7 @@ export class OpenPullRequestDialog extends React.Component<IOpenPullRequestDialo
     const okButton = (
       <>
         {currentBranchHasPullRequest && (
-          <Octicon symbol={OcticonSymbol.linkExternal} />
+          <Octicon symbol={octicons.linkExternal} />
         )}
         {__DARWIN__
           ? `${viewCreate} Pull Request`
@@ -274,6 +278,7 @@ export class OpenPullRequestDialog extends React.Component<IOpenPullRequestDialo
   public render() {
     return (
       <Dialog
+        titleId={OpenPullRequestDialogId}
         className="open-pull-request"
         onSubmit={this.onCreatePullRequest}
         onDismissed={this.props.onDismissed}
