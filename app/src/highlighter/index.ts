@@ -213,6 +213,8 @@ const extensionModes: ReadonlyArray<IModeDefinition> = [
     install: () => import('codemirror/mode/python/python'),
     mappings: {
       '.py': 'text/x-python',
+      '.pyi': 'text/x-python',
+      '.vpy': 'text/x-python',
     },
   },
   {
@@ -275,9 +277,10 @@ const extensionModes: ReadonlyArray<IModeDefinition> = [
     },
   },
   {
-    install: () => import('codemirror/mode/lua/lua'),
+    install: () => import('codemirror-mode-luau'),
     mappings: {
       '.lua': 'text/x-lua',
+      '.luau': 'text/x-luau',
     },
   },
   {
@@ -431,6 +434,12 @@ const extensionModes: ReadonlyArray<IModeDefinition> = [
     },
   },
   {
+    install: () => import('codemirror-mode-zig'),
+    mappings: {
+      '.zig': 'text/x-zig',
+    },
+  },
+  {
     install: () => import('codemirror/mode/cmake/cmake'),
     mappings: {
       '.cmake': 'text/x-cmake',
@@ -454,6 +463,12 @@ const basenameModes: ReadonlyArray<IModeDefinition> = [
     install: () => import('codemirror/mode/dockerfile/dockerfile'),
     mappings: {
       dockerfile: 'text/x-dockerfile',
+    },
+  },
+  {
+    install: () => import('codemirror/mode/toml/toml'),
+    mappings: {
+      'cargo.lock': 'text/x-toml',
     },
   },
 ]
@@ -599,8 +614,8 @@ function readToken(
   throw new Error(`Mode ${getModeName(mode)} failed to advance stream.`)
 }
 
-onmessage = async (ev: MessageEvent) => {
-  const request = ev.data as IHighlightRequest
+onmessage = async (ev: MessageEvent<IHighlightRequest>) => {
+  const request = ev.data
 
   const tabSize = request.tabSize || 4
   const addModeClass = request.addModeClass === true

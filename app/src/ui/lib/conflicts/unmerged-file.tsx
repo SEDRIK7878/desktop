@@ -12,7 +12,7 @@ import { Repository } from '../../../models/repository'
 import { Dispatcher } from '../../dispatcher'
 import { showContextualMenu } from '../../../lib/menu-item'
 import { Octicon } from '../../octicons'
-import * as OcticonSymbol from '../../octicons/octicons.generated'
+import * as octicons from '../../octicons/octicons.generated'
 import { PathText } from '../path-text'
 import { ManualConflictResolution } from '../../../models/manual-conflict-resolution'
 import {
@@ -141,7 +141,7 @@ const renderResolvedFile: React.FunctionComponent<{
   )
   return (
     <li key={props.path} className="unmerged-file-status-resolved">
-      <Octicon symbol={OcticonSymbol.fileCode} className="file-octicon" />
+      <Octicon symbol={octicons.fileCode} className="file-octicon" />
       <div className="column-left" id={props.path}>
         <PathText path={props.path} />
         <div className="file-conflicts-status">{fileStatusSummary}</div>
@@ -160,7 +160,7 @@ const renderResolvedFile: React.FunctionComponent<{
         </Button>
       )}
       <div className="green-circle">
-        <Octicon symbol={OcticonSymbol.check} />
+        <Octicon symbol={octicons.check} />
       </div>
     </li>
   )
@@ -183,6 +183,16 @@ const renderManualConflictedFile: React.FunctionComponent<{
     props.ourBranch,
     props.theirBranch
   )
+
+  const onDropdownKeyDown = makeManualConflictDropdownOnKeyDownHandler(
+    props.path,
+    props.status,
+    props.repository,
+    props.dispatcher,
+    props.ourBranch,
+    props.theirBranch
+  )
+
   const { ourBranch, theirBranch } = props
   const { entry } = props.status
 
@@ -210,9 +220,10 @@ const renderManualConflictedFile: React.FunctionComponent<{
         <Button
           className="small-button button-group-item resolve-arrow-menu"
           onClick={onDropdownClick}
+          onKeyDown={onDropdownKeyDown}
         >
           Resolve
-          <Octicon symbol={OcticonSymbol.triangleDown} />
+          <Octicon symbol={octicons.triangleDown} />
         </Button>
       </div>
     </>
@@ -227,7 +238,7 @@ function renderConflictedFileWrapper(
 ): JSX.Element {
   return (
     <li key={path} className="unmerged-file-status-conflicts">
-      <Octicon symbol={OcticonSymbol.fileCode} className="file-octicon" />
+      <Octicon symbol={octicons.fileCode} className="file-octicon" />
       {content}
     </li>
   )
@@ -267,6 +278,15 @@ const renderConflictedFileWithConflictMarkers: React.FunctionComponent<{
     props.setIsFileResolutionOptionsMenuOpen
   )
 
+  const onDropdownKeyDown = makeManualConflictDropdownOnKeyDownHandler(
+    props.path,
+    props.status,
+    props.repository,
+    props.dispatcher,
+    props.ourBranch,
+    props.theirBranch
+  )
+
   const content = (
     <>
       <div className="column-left">
@@ -284,12 +304,13 @@ const renderConflictedFileWithConflictMarkers: React.FunctionComponent<{
         </Button>
         <Button
           onClick={onDropdownClick}
+          onKeyDown={onDropdownKeyDown}
           className="small-button button-group-item arrow-menu"
           ariaLabel="File resolution options"
           ariaHaspopup="menu"
           ariaExpanded={props.isFileResolutionOptionsMenuOpen}
         >
-          <Octicon symbol={OcticonSymbol.triangleDown} />
+          <Octicon symbol={octicons.triangleDown} />
         </Button>
       </div>
     </>
@@ -317,6 +338,29 @@ const makeManualConflictDropdownClickHandler = (
         theirBranch
       )
     )
+  }
+}
+
+/** makes a click handling function for manual conflict resolution options */
+const makeManualConflictDropdownOnKeyDownHandler = (
+  relativeFilePath: string,
+  status: ManualConflict,
+  repository: Repository,
+  dispatcher: Dispatcher,
+  ourBranch?: string,
+  theirBranch?: string
+) => {
+  return (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === 'ArrowDown') {
+      return makeManualConflictDropdownClickHandler(
+        relativeFilePath,
+        status,
+        repository,
+        dispatcher,
+        ourBranch,
+        theirBranch
+      )()
+    }
   }
 }
 

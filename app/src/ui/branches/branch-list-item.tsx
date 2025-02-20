@@ -3,7 +3,7 @@ import * as React from 'react'
 import { IMatches } from '../../lib/fuzzy-find'
 
 import { Octicon } from '../octicons'
-import * as OcticonSymbol from '../octicons/octicons.generated'
+import * as octicons from '../octicons/octicons.generated'
 import { HighlightText } from '../lib/highlight-text'
 import { dragAndDropManager } from '../../lib/drag-and-drop-manager'
 import { DragType, DropTargetType } from '../../models/drag-drop'
@@ -18,11 +18,10 @@ interface IBranchListItemProps {
   /** Specifies whether this item is currently selected */
   readonly isCurrentBranch: boolean
 
-  /** The date may be null if we haven't loaded the tip commit yet. */
-  readonly lastCommitDate: Date | null
-
   /** The characters in the branch name to highlight */
   readonly matches: IMatches
+
+  readonly authorDate: Date | undefined
 
   /** When a drag element has landed on a branch that is not current */
   readonly onDropOntoBranch?: (branchName: string) => void
@@ -91,13 +90,18 @@ export class BranchListItem extends React.Component<
   }
 
   public render() {
-    const { lastCommitDate, isCurrentBranch, name } = this.props
-    const icon = isCurrentBranch ? OcticonSymbol.check : OcticonSymbol.gitBranch
+    const { authorDate, isCurrentBranch, name } = this.props
+
+    const icon = isCurrentBranch ? octicons.check : octicons.gitBranch
     const className = classNames('branches-list-item', {
       'drop-target': this.state.isDragInProgress,
     })
 
     return (
+      /**
+       * This a11y linter is a false-positive as the element is a drop target
+       * facilitating our drag and drop functionality for cherry-picking.
+       */
       // eslint-disable-next-line jsx-a11y/no-static-element-interactions
       <div
         className={className}
@@ -114,10 +118,10 @@ export class BranchListItem extends React.Component<
         >
           <HighlightText text={name} highlight={this.props.matches.title} />
         </TooltippedContent>
-        {lastCommitDate && (
+        {authorDate && (
           <RelativeTime
             className="description"
-            date={lastCommitDate}
+            date={authorDate}
             onlyRelative={true}
           />
         )}

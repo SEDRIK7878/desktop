@@ -1,6 +1,5 @@
-/* eslint-disable jsx-a11y/no-static-element-interactions */
 import * as React from 'react'
-import { Octicon, OcticonSymbolType } from '../octicons'
+import { Octicon, OcticonSymbol } from '../octicons'
 import classNames from 'classnames'
 import { assertNever } from '../../lib/fatal-error'
 import { Button } from '../lib/button'
@@ -8,6 +7,7 @@ import { clamp } from '../../lib/clamp'
 import { createObservableRef } from '../lib/observable-ref'
 import { Tooltip, TooltipDirection, TooltipTarget } from '../lib/tooltip'
 import { AriaHasPopupType } from '../lib/aria-types'
+import { enableResizingToolbarButtons } from '../../lib/feature-flag'
 
 /** The button style. */
 export enum ToolbarButtonStyle {
@@ -29,7 +29,7 @@ export interface IToolbarButtonProps {
   readonly tooltip?: string
 
   /** An optional symbol to be displayed next to the button text */
-  readonly icon?: OcticonSymbolType
+  readonly icon?: OcticonSymbol
 
   /** The class name for the icon element. */
   readonly iconClassName?: string
@@ -52,12 +52,6 @@ export interface IToolbarButtonProps {
    * a pointer device.
    */
   readonly onMouseEnter?: (event: React.MouseEvent<HTMLButtonElement>) => void
-
-  /**
-   * A function that's called when a key event is received from the
-   * ToolbarButton component or any of its descendants.
-   */
-  readonly onKeyDown?: (event: React.KeyboardEvent<HTMLDivElement>) => void
 
   /**
    * An optional classname that will be appended to the default
@@ -189,6 +183,7 @@ export class ToolbarButton extends React.Component<IToolbarButtonProps, {}> {
     const className = classNames(
       'toolbar-button',
       { 'has-progress': this.props.progressValue !== undefined },
+      { resizable: enableResizingToolbarButtons() },
       this.props.className
     )
 
@@ -206,11 +201,7 @@ export class ToolbarButton extends React.Component<IToolbarButtonProps, {}> {
       ) : undefined
 
     return (
-      <div
-        className={className}
-        onKeyDown={this.props.onKeyDown}
-        ref={this.wrapperRef}
-      >
+      <div className={className} ref={this.wrapperRef}>
         {tooltip && (
           <Tooltip
             target={this.wrapperRef}

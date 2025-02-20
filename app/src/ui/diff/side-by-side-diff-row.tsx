@@ -6,25 +6,120 @@ import {
   DiffRowType,
   IDiffRowData,
   DiffColumn,
+  isRowChanged,
 } from './diff-helpers'
 import { ILineTokens } from '../../lib/highlighter/types'
 import classNames from 'classnames'
-import { Octicon } from '../octicons'
-import * as OcticonSymbol from '../octicons/octicons.generated'
-import { narrowNoNewlineSymbol } from './text-diff'
+import { Octicon, OcticonSymbolVariant } from '../octicons'
+import * as octicons from '../octicons/octicons.generated'
 import { shallowEquals, structuralEquals } from '../../lib/equality'
-import { DiffHunkExpansionType } from '../../models/diff'
+import { DiffHunkExpansionType, DiffSelectionType } from '../../models/diff'
 import { PopoverAnchorPosition } from '../lib/popover'
 import { WhitespaceHintPopover } from './whitespace-hint-popover'
 import { TooltipDirection } from '../lib/tooltip'
 import { Button } from '../lib/button'
-import { diffCheck } from '../octicons/diff-check'
+import { diffCheck, diffDash } from '../octicons/diff'
+
+// This is a custom version of the no-newline octicon that's exactly as
+// tall as it needs to be (8px) which helps with aligning it on the line.
+const narrowNoNewlineSymbol: OcticonSymbolVariant = {
+  w: 16,
+  h: 8,
+  p: [
+    'm 16,1 0,3 c 0,0.55 -0.45,1 -1,1 l -3,0 0,2 -3,-3 3,-3 0,2 2,0 0,-2 2,0 z M 8,4 C 8,6.2 6.2,8 4,8 1.8,8 0,6.2 0,4 0,1.8 1.8,0 4,0 6.2,0 8,1.8 8,4 Z M 1.5,5.66 5.66,1.5 C 5.18,1.19 4.61,1 4,1 2.34,1 1,2.34 1,4 1,4.61 1.19,5.17 1.5,5.66 Z M 7,4 C 7,3.39 6.81,2.83 6.5,2.34 L 2.34,6.5 C 2.82,6.81 3.39,7 4,7 5.66,7 7,5.66 7,4 Z',
+  ],
+}
 
 enum DiffRowPrefix {
   Added = '+',
   Deleted = '-',
   Nothing = '\u{A0}',
 }
+
+/**
+ * This interface is used to pass information about a continuous group of
+ * selectable rows to the row component as it pertains to a given row.
+ *
+ * Primarily used for the styling of the row and it's check all control.
+ */
+export interface IRowSelectableGroup {
+  /**
+   * Whether or not the row is the first in the selectable group
+   */
+  isFirst: boolean
+
+  /**
+   * Whether or not the group is hovered by the mouse
+   */
+  isHovered: boolean
+
+  /**
+   * Whether or not the check all handle is rendered in this row
+   */
+  isCheckAllRenderedInRow: boolean
+
+  /**
+   * The selection state of the group - 'All', 'Partial', or 'None'
+   */
+  selectionState: DiffSelectionType
+
+  /**
+   * The height of the number of rendered rows in the group
+   *
+   * Usually, this is the height of all the rows in the group, but if the group
+   * is partially scrolled out of view, it will be the height of the rendered
+   * row. The diff is a virtualized list, so a row may be rendered but out of
+   * view.
+   */
+  height: number
+
+  /**
+   * The data that does not change on render
+   */
+  staticData: IRowSelectableGroupStaticData
+}
+
+/**
+ * This is to house the data that could be cached as it should not change with
+ * each row render. It is info such as whether or not the row is the first or
+ * last in the group, the line numbers, and the diff type of the group.
+ */
+export interface IRowSelectableGroupStaticData {
+  /**
+   * The group's rows starting index.
+   *
+   * Note: Since the array of diff rows includes hunk
+   * headeres, this does not equate to the line numbers.
+   */
+  diffRowStartIndex: number
+
+  /**
+   * The group's rows ending index.
+   *
+   * Note: Since the array of diff rows includes hunk
+   * headers, this does not equate to the line numbers.
+   */
+  diffRowStopIndex: number
+
+  /** The group's diff type, all 'added',  all 'deleted', or a mix = 'modified */
+  diffType: DiffRowType
+
+  /**
+   * The line numbers associated with the group
+   */
+  lineNumbers: ReadonlyArray<number>
+
+  /**
+   * The line numbers identifiers associated with the group.
+   *
+   * If the line numbers are [4, 5, 6] then the lineNumbersIdentifiers could be
+   * something like [`4-before`, `4-after`, `5-after`, `6-after`] as the line
+   * number is not unique without the "before" or "after" suffix
+   */
+  lineNumbersIdentifiers: ReadonlyArray<CheckBoxIdentifier>
+}
+
+export type CheckBoxIdentifier = `${number}-${'after' | 'before'}`
 
 interface ISideBySideDiffRowProps {
   /**
@@ -36,11 +131,6 @@ interface ISideBySideDiffRowProps {
    * Whether the diff is selectable or read-only.
    */
   readonly isDiffSelectable: boolean
-
-  /**
-   * Whether the row belongs to a hunk that is hovered.
-   */
-  readonly isHunkHovered: boolean
 
   /**
    * Whether to display the rows side by side.
@@ -128,11 +218,6 @@ interface ISideBySideDiffRowProps {
   readonly onContextMenuExpandHunk: () => void
 
   /**
-   * Called when the user right-clicks text on the diff.
-   */
-  readonly onContextMenuText: () => void
-
-  /**
    * Array of classes applied to the after section of a row
    */
   readonly afterClassNames: ReadonlyArray<string>
@@ -150,6 +235,12 @@ interface ISideBySideDiffRowProps {
     expansionType: DiffHunkExpansionType,
     element: HTMLButtonElement | null
   ) => void
+
+  /** Whether or not to show the diff check marks indicating inclusion in a commit */
+  readonly showDiffCheckMarks: boolean
+
+  /** The selectable group details */
+  readonly rowSelectableGroup: IRowSelectableGroup | null
 }
 
 interface ISideBySideDiffRowState {
@@ -166,30 +257,37 @@ export class SideBySideDiffRow extends React.Component<
   }
 
   public render() {
-    const { row, showSideBySideDiff, beforeClassNames, afterClassNames } =
-      this.props
-
+    const {
+      row,
+      showSideBySideDiff,
+      beforeClassNames,
+      afterClassNames,
+      isDiffSelectable,
+    } = this.props
+    const baseRowClasses = classNames('row', {
+      'has-check-all-control':
+        this.props.showDiffCheckMarks && isDiffSelectable,
+    })
     const beforeClasses = classNames('before', ...beforeClassNames)
     const afterClasses = classNames('after', ...afterClassNames)
     switch (row.type) {
       case DiffRowType.Hunk: {
-        const className = ['row', 'hunk-info']
-        if (row.expansionType === DiffHunkExpansionType.Both) {
-          className.push('expandable-both')
-        }
-
+        const rowClasses = classNames('hunk-info', baseRowClasses, {
+          'expandable-both': row.expansionType === DiffHunkExpansionType.Both,
+        })
         return (
-          <div className={classNames(className)}>
+          <div className={rowClasses} role="cell">
             {this.renderHunkHeaderGutter(row.hunkIndex, row.expansionType)}
             {this.renderContentFromString(row.content)}
           </div>
         )
       }
       case DiffRowType.Context:
+        const rowClasses = classNames('context', baseRowClasses)
         const { beforeLineNumber, afterLineNumber } = row
         if (!showSideBySideDiff) {
           return (
-            <div className="row context">
+            <div className={rowClasses} role="cell">
               <div className="before">
                 {this.renderLineNumbers(
                   [beforeLineNumber, afterLineNumber],
@@ -202,7 +300,7 @@ export class SideBySideDiffRow extends React.Component<
         }
 
         return (
-          <div className="row context">
+          <div className={rowClasses} role="cell">
             <div className="before">
               {this.renderLineNumber(beforeLineNumber, DiffColumn.Before)}
               {this.renderContentFromString(row.content, row.beforeTokens)}
@@ -216,16 +314,17 @@ export class SideBySideDiffRow extends React.Component<
 
       case DiffRowType.Added: {
         const { lineNumber, isSelected } = row.data
+        const rowClasses = classNames('added', baseRowClasses)
         if (!showSideBySideDiff) {
           return (
-            <div className="row added">
+            <div className={rowClasses} role="cell">
+              {this.renderHunkHandle()}
               <div className={afterClasses}>
                 {this.renderLineNumbers(
                   [undefined, lineNumber],
                   DiffColumn.After,
                   isSelected
                 )}
-                {this.renderHunkHandle()}
                 {this.renderContent(row.data, DiffRowPrefix.Added)}
                 {this.renderWhitespaceHintPopover(DiffColumn.After)}
               </div>
@@ -234,33 +333,34 @@ export class SideBySideDiffRow extends React.Component<
         }
 
         return (
-          <div className="row added">
+          <div className={rowClasses} role="cell">
             <div className={beforeClasses}>
               {this.renderLineNumber(undefined, DiffColumn.Before)}
               {this.renderContentFromString('')}
               {this.renderWhitespaceHintPopover(DiffColumn.Before)}
             </div>
+            {this.renderHunkHandle()}
             <div className={afterClasses}>
               {this.renderLineNumber(lineNumber, DiffColumn.After, isSelected)}
               {this.renderContent(row.data, DiffRowPrefix.Added)}
               {this.renderWhitespaceHintPopover(DiffColumn.After)}
             </div>
-            {this.renderHunkHandle()}
           </div>
         )
       }
       case DiffRowType.Deleted: {
         const { lineNumber, isSelected } = row.data
+        const rowClasses = classNames('deleted', baseRowClasses)
         if (!showSideBySideDiff) {
           return (
-            <div className="row deleted">
+            <div className={rowClasses} role="cell">
+              {this.renderHunkHandle()}
               <div className={beforeClasses}>
                 {this.renderLineNumbers(
                   [lineNumber, undefined],
                   DiffColumn.Before,
                   isSelected
                 )}
-                {this.renderHunkHandle()}
                 {this.renderContent(row.data, DiffRowPrefix.Deleted)}
                 {this.renderWhitespaceHintPopover(DiffColumn.Before)}
               </div>
@@ -269,25 +369,26 @@ export class SideBySideDiffRow extends React.Component<
         }
 
         return (
-          <div className="row deleted">
+          <div className={rowClasses} role="cell">
             <div className={beforeClasses}>
               {this.renderLineNumber(lineNumber, DiffColumn.Before, isSelected)}
               {this.renderContent(row.data, DiffRowPrefix.Deleted)}
               {this.renderWhitespaceHintPopover(DiffColumn.Before)}
             </div>
+            {this.renderHunkHandle()}
             <div className={afterClasses}>
               {this.renderLineNumber(undefined, DiffColumn.After)}
               {this.renderContentFromString('', [])}
               {this.renderWhitespaceHintPopover(DiffColumn.After)}
             </div>
-            {this.renderHunkHandle()}
           </div>
         )
       }
       case DiffRowType.Modified: {
         const { beforeData: before, afterData: after } = row
+        const rowClasses = classNames('modified', baseRowClasses)
         return (
-          <div className="row modified">
+          <div className={rowClasses} role="cell">
             <div className={beforeClasses}>
               {this.renderLineNumber(
                 before.lineNumber,
@@ -297,6 +398,7 @@ export class SideBySideDiffRow extends React.Component<
               {this.renderContent(before, DiffRowPrefix.Deleted)}
               {this.renderWhitespaceHintPopover(DiffColumn.Before)}
             </div>
+            {this.renderHunkHandle()}
             <div className={afterClasses}>
               {this.renderLineNumber(
                 after.lineNumber,
@@ -306,7 +408,6 @@ export class SideBySideDiffRow extends React.Component<
               {this.renderContent(after, DiffRowPrefix.Added)}
               {this.renderWhitespaceHintPopover(DiffColumn.After)}
             </div>
-            {this.renderHunkHandle()}
           </div>
         )
       }
@@ -344,7 +445,7 @@ export class SideBySideDiffRow extends React.Component<
     prefix: DiffRowPrefix = DiffRowPrefix.Nothing
   ) {
     return (
-      <div className="content" onContextMenu={this.props.onContextMenuText}>
+      <div className="content">
         <div className="prefix">&nbsp;&nbsp;{prefix}&nbsp;&nbsp;</div>
         <div className="content-wrapper">
           {/* Copy to clipboard will ignore empty "lines" unless we add br */}
@@ -370,7 +471,7 @@ export class SideBySideDiffRow extends React.Component<
       // This can only be the first hunk
       case DiffHunkExpansionType.Up:
         return {
-          icon: OcticonSymbol.foldUp,
+          icon: octicons.foldUp,
           title: 'Expand Up',
           handler: this.onExpandHunk(hunkIndex, expansionType),
         }
@@ -378,13 +479,13 @@ export class SideBySideDiffRow extends React.Component<
       // second to last hunk down.
       case DiffHunkExpansionType.Down:
         return {
-          icon: OcticonSymbol.foldDown,
+          icon: octicons.foldDown,
           title: 'Expand Down',
           handler: this.onExpandHunk(hunkIndex - 1, expansionType),
         }
       case DiffHunkExpansionType.Short:
         return {
-          icon: OcticonSymbol.fold,
+          icon: octicons.fold,
           title: 'Expand All',
           handler: this.onExpandHunk(hunkIndex, expansionType),
         }
@@ -399,10 +500,15 @@ export class SideBySideDiffRow extends React.Component<
    * for side-by-side diffs the gutter contains the line number of only one side.
    */
   private get lineGutterWidth() {
-    const { showSideBySideDiff, lineNumberWidth, isDiffSelectable } = this.props
+    const {
+      showSideBySideDiff,
+      lineNumberWidth,
+      isDiffSelectable,
+      showDiffCheckMarks,
+    } = this.props
     return (
       (showSideBySideDiff ? lineNumberWidth : lineNumberWidth * 2) +
-      (isDiffSelectable ? 14 : 0)
+      (isDiffSelectable && showDiffCheckMarks ? 20 : 0)
     )
   }
 
@@ -410,12 +516,10 @@ export class SideBySideDiffRow extends React.Component<
     hunkIndex: number,
     expansionType: DiffHunkExpansionType
   ) {
+    const width = this.lineGutterWidth
     if (expansionType === DiffHunkExpansionType.None) {
       return (
-        <div
-          className="hunk-expansion-handle"
-          style={{ width: this.lineGutterWidth }}
-        >
+        <div className="hunk-expansion-handle" style={{ width }}>
           <div className="hunk-expansion-placeholder" />
         </div>
       )
@@ -429,7 +533,7 @@ export class SideBySideDiffRow extends React.Component<
     return (
       <div
         className="hunk-expansion-handle selectable hoverable"
-        style={{ width: this.lineGutterWidth }}
+        style={{ width }}
       >
         <Button
           onClick={elementInfo.handler}
@@ -471,27 +575,150 @@ export class SideBySideDiffRow extends React.Component<
   }
 
   private renderHunkHandle() {
-    if (!this.props.isDiffSelectable) {
+    const { isDiffSelectable, rowSelectableGroup, row } = this.props
+    if (!isDiffSelectable) {
       return null
     }
 
-    // In unified mode, the hunk handle left position depends on the line gutter
-    // width.
-    const style: React.CSSProperties = this.props.showSideBySideDiff
-      ? {}
-      : { left: this.lineGutterWidth }
+    if (!isRowChanged(row)) {
+      return null
+    }
 
-    return (
-      // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-      <div
-        className="hunk-handle hoverable"
+    if (rowSelectableGroup === null) {
+      return this.renderHunkHandlePlaceHolder()
+    }
+
+    const {
+      height,
+      selectionState,
+      staticData,
+      isCheckAllRenderedInRow,
+      isFirst,
+    } = rowSelectableGroup
+
+    if (!isCheckAllRenderedInRow) {
+      return this.renderHunkHandlePlaceHolder(selectionState)
+    }
+
+    const { lineNumbers, lineNumbersIdentifiers, diffType } = staticData
+    const isOnlyOneCheckInRow = lineNumbersIdentifiers.length === 1
+    const style = { height }
+    const hunkHandleClassName = classNames('hunk-handle', 'hoverable', {
+      // selected is a class if any line in the group is selected
+      selected: selectionState !== DiffSelectionType.None,
+    })
+    const checkAllId = lineNumbersIdentifiers.join('-')
+
+    /* The hunk-handle is a a single element with a calculated height of all the
+     rows in the selectable group (See `getRowSelectableGroupHeight` in
+     `side-by-side-diff.tsx`). This gives us a single element to be our control
+     of the check all functionality. It is positioned absolutely over the
+     hunk-handle-place-holders in each row in order to provide one element that
+     is interactive.
+
+     Other notes: I originally attempted to just use a single hunk-handle
+     for the first row in a group as the heights of the rows are calculated and
+     the rows do not clip overflow. However, that messes with the initial
+     measurement for cache of the first row's height as the cell measurer will
+     include the hunk handles initially calculated height (num rows times
+     default row height) in it's measurement. (Resulting in the first row in a
+     group heights = to however many lines in the group x 20) Thus, I decided to
+     use the place holder element in each row to define the width of the hunk
+     handle in the row and just position the hunk handle over them. A bit on the
+     hacky side.
+    */
+    const hunkHandle = (
+      <label
+        htmlFor={checkAllId}
         onMouseEnter={this.onMouseEnterHunk}
         onMouseLeave={this.onMouseLeaveHunk}
-        onClick={this.onClickHunk}
         onContextMenu={this.onContextMenuHunk}
+        className={hunkHandleClassName}
         style={style}
+      >
+        <span className="focus-handle">
+          {!this.props.showDiffCheckMarks && (
+            <div className="increased-hover-surface" style={{ height }} />
+          )}
+          {!isOnlyOneCheckInRow &&
+            this.getCheckAllOcticon(selectionState, isFirst)}
+          {!isOnlyOneCheckInRow && (
+            <span className="sr-only">
+              {' '}
+              Lines {lineNumbers.at(0)} to {lineNumbers.at(-1)}{' '}
+              {diffType === DiffRowType.Added
+                ? 'added'
+                : diffType === DiffRowType.Deleted
+                ? 'deleted'
+                : 'modified'}
+            </span>
+          )}
+        </span>
+      </label>
+    )
+
+    const checkAllControl = (
+      <input
+        className="sr-only"
+        id={checkAllId}
+        type="checkbox"
+        aria-controls={lineNumbersIdentifiers.join(' ')}
+        aria-checked={
+          selectionState === DiffSelectionType.All
+            ? true
+            : selectionState === DiffSelectionType.Partial
+            ? 'mixed'
+            : false
+        }
+        onChange={this.onClickHunk}
+        onFocus={this.onHunkFocus}
+        onBlur={this.onHunkBlur}
+        onContextMenu={this.onContextMenuHunk}
+      />
+    )
+
+    return (
+      <>
+        {!isOnlyOneCheckInRow && checkAllControl}
+        {hunkHandle}
+        {this.renderHunkHandlePlaceHolder(selectionState)}
+      </>
+    )
+  }
+
+  /**
+   * On scroll of the diff, the rendering of the hunk handle can be delayed so
+   * we make the placeholder mimic the selected state so visually it looks like
+   * the hunk handle is there and there isn't a flickter of grey background.
+   */
+  private renderHunkHandlePlaceHolder = (
+    selectionState?: DiffSelectionType
+  ) => {
+    return (
+      <div
+        className={classNames('hunk-handle-place-holder', {
+          selected: selectionState !== DiffSelectionType.None,
+        })}
       ></div>
     )
+  }
+
+  private getCheckAllOcticon = (
+    selectionState: DiffSelectionType,
+    isFirst: boolean
+  ) => {
+    if (!isFirst || !this.props.showDiffCheckMarks) {
+      return null
+    }
+
+    if (selectionState === DiffSelectionType.All) {
+      return <Octicon symbol={diffCheck} />
+    }
+    if (selectionState === DiffSelectionType.Partial) {
+      return <Octicon symbol={diffDash} />
+    }
+
+    return null
   }
 
   private getLineNumbersContainerID(column: DiffColumn) {
@@ -519,25 +746,53 @@ export class SideBySideDiffRow extends React.Component<
       selectable: isSelectable,
       hoverable: isSelectable,
       'line-selected': isSelected,
-      hover: this.props.isHunkHovered,
+      hover: this.props.rowSelectableGroup?.isHovered,
     })
-    const checkboxId = wrapperID ? wrapperID + '-checkbox' : undefined
+
+    const firstDefinedLineNumber = lineNumbers
+      .filter(ln => ln !== undefined)
+      .at(0)
+    if (firstDefinedLineNumber === undefined) {
+      // This shouldn't be possible. If there are no line numbers, we shouldn't
+      // be rendering this component.
+      return null
+    }
+
+    // Note: This id is used by the check all aria-controls attribute,
+    // modification of this should be reflected there.
+    const checkboxId: CheckBoxIdentifier = `${firstDefinedLineNumber}-${
+      column === DiffColumn.After ? 'after' : 'before'
+    }`
 
     return (
+      /**
+       * This a11y linter is a false-positive as the mousedown facilitates our
+       * drag selection functionality.
+       */
       // eslint-disable-next-line jsx-a11y/no-static-element-interactions
       <div
         id={wrapperID}
         className={classes}
         style={{ width: this.lineGutterWidth }}
         onMouseDown={this.onMouseDownLineNumber}
-        onContextMenu={this.onContextMenuLineNumber}
       >
         {isSelectable &&
           this.renderLineNumberCheckbox(checkboxId, isSelected === true)}
-        <label htmlFor={checkboxId}>
+        <label
+          htmlFor={checkboxId}
+          onContextMenu={this.onContextMenuLineNumber}
+        >
           {this.renderLineNumberCheck(isSelected)}
           {lineNumbers.map((lineNumber, index) => (
-            <span key={index}>{lineNumber}</span>
+            <span key={index}>
+              {lineNumber && <span className="sr-only">Line </span>}
+              {lineNumber}
+              {lineNumber && isSelected !== undefined && (
+                <span className="sr-only">
+                  {column === DiffColumn.After ? ' added' : ' deleted'}
+                </span>
+              )}
+            </span>
           ))}
         </label>
       </div>
@@ -545,7 +800,7 @@ export class SideBySideDiffRow extends React.Component<
   }
 
   private renderLineNumberCheck(isSelected?: boolean) {
-    if (!this.props.isDiffSelectable) {
+    if (!this.props.isDiffSelectable || !this.props.showDiffCheckMarks) {
       return null
     }
 
@@ -562,6 +817,7 @@ export class SideBySideDiffRow extends React.Component<
   ) {
     return (
       <input
+        onContextMenu={this.onContextMenuLineNumber}
         className="sr-only"
         id={checkboxId}
         type="checkbox"
@@ -714,6 +970,18 @@ export class SideBySideDiffRow extends React.Component<
   }
 
   private onMouseLeaveHunk = () => {
+    if ('hunkStartLine' in this.props.row) {
+      this.props.onMouseLeaveHunk(this.props.row.hunkStartLine)
+    }
+  }
+
+  private onHunkFocus = () => {
+    if ('hunkStartLine' in this.props.row) {
+      this.props.onMouseEnterHunk(this.props.row.hunkStartLine)
+    }
+  }
+
+  private onHunkBlur = () => {
     if ('hunkStartLine' in this.props.row) {
       this.props.onMouseLeaveHunk(this.props.row.hunkStartLine)
     }

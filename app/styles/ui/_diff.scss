@@ -683,6 +683,10 @@
     color: inherit;
   }
 
+  .cm-quote {
+    color: var(--syntax-quote-color);
+  }
+
   .cm-variable-2,
   .cm-variable-3 {
     color: var(--syntax-alt-variable-color);
@@ -752,6 +756,12 @@
     }
   }
 
+  .cm-m-toml {
+    &.cm-string.cm-property {
+      color: var(--syntax-string-color);
+    }
+  }
+
   // Intra line markings takes precedence over syntax highlighting.
   .cm-diff-delete-inner {
     color: var(--diff-delete-text-color) !important;
@@ -789,6 +799,15 @@
 
       .blankslate-image {
         max-height: 150px;
+      }
+
+      .description {
+        margin-top: var(--spacing);
+        margin-bottom: var(--spacing);
+
+        p {
+          margin: 0;
+        }
       }
     }
   }
